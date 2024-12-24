@@ -9,6 +9,7 @@ import yaml
 import argparse
 import datetime
 import os
+import socket
 
 from lib.helpers.model_helper import build_model
 from lib.helpers.dataloader_helper import build_dataloader
@@ -33,12 +34,16 @@ def main():
     cfg = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)
     set_random_seed(cfg.get('random_seed', 444))
 
-    log_path = ROOT_DIR + "/experiments/example/logs/"
+    cfg['trainer']['log_dir'] = os.path.join(os.path.dirname(cfg['trainer']['log_dir']), \
+                                            datetime.datetime.now().strftime('%Y%m%d%H%M_') + os.path.basename(cfg['trainer']['log_dir']) + '_' + socket.gethostname()[:10] + '_' + '-'.join(cfg['model']['kd_type']))
+    os.makedirs(cfg['trainer']['log_dir'], exist_ok=True)
+
+    log_path = cfg['trainer']['log_dir']
     if os.path.exists(log_path):
         pass
     else:
         os.mkdir(log_path)
-    log_file = 'train.log.%s' % datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = '/train.log.%s' % datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     logger = create_logger(log_path, log_file)
 
 
@@ -79,7 +84,8 @@ def main():
                       warmup_lr_scheduler=warmup_lr_scheduler,
                       logger=logger,
                       model_type=cfg['model']['type'],
-                      root_path=ROOT_DIR)
+                      root_path=ROOT_DIR,
+                      kd_type=cfg['model']['kd_type'])
     trainer.train()
 
     logger.info('###################  Evaluation  ##################' )

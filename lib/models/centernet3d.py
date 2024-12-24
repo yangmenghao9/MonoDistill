@@ -60,6 +60,22 @@ class CenterNet3D(nn.Module):
             ret[head] = self.__getattr__(head)(feat)
 
         return feat_backbone, ret
+    
+
+    def forward_backbone(self, input):
+        if self.model_type == 'centernet3d':
+            input = input['rgb']
+        feat_backbone = self.backbone(input)
+        return feat_backbone
+    
+
+    def forward_head(self, feat_backbone):
+        feat = self.neck(feat_backbone[self.first_level:])  # first_level = 2
+
+        ret = {}
+        for head in self.heads:
+            ret[head] = self.__getattr__(head)(feat)
+        return ret
 
 
     def fill_fc_weights(self, layers):

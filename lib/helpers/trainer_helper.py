@@ -56,7 +56,8 @@ class Trainer(object):
                  warmup_lr_scheduler,
                  logger,
                  model_type,
-                 root_path):
+                 root_path,
+                 kd_type=None):
         self.cfg = cfg
         self.model = model
         self.optimizer = optimizer
@@ -124,6 +125,7 @@ class Trainer(object):
 
         self.gpu_ids = list(map(int, cfg['gpu_ids'].split(',')))
         self.model = torch.nn.DataParallel(self.model).cuda()
+        self.kd_type = kd_type
 
     def update_lr_scheduler(self, epoch):
         if self.warmup_lr_scheduler is not None and epoch < 5:
@@ -133,8 +135,8 @@ class Trainer(object):
 
     def save_model(self):
         if (self.epoch % self.cfg['save_frequency']) == 0:
-            os.makedirs(self.cfg['model_save_path'], exist_ok=True)
-            ckpt_name = os.path.join(self.cfg['model_save_path'], 'checkpoint_epoch_%d' % self.epoch)
+            os.makedirs(os.path.join(self.cfg['log_dir'], "checkpoints"), exist_ok=True)
+            ckpt_name = os.path.join(os.path.join(self.cfg['log_dir'], "checkpoints"), 'checkpoint_epoch_%d' % self.epoch)
             save_checkpoint(get_checkpoint_state(self.model, self.optimizer, self.epoch), ckpt_name)
             #self.inference()
             #self.evaluate()
@@ -143,14 +145,15 @@ class Trainer(object):
 
         start_epoch = self.epoch
 
-        progress_bar = tqdm.tqdm(range(start_epoch, self.cfg['max_epoch']), dynamic_ncols=True, leave=True,
-                                 desc='epochs')
+        # progress_bar = tqdm.tqdm(range(start_epoch, self.cfg['max_epoch']), dynamic_ncols=True, leave=True,
+        #                          desc='epochs')
         for epoch in range(start_epoch, self.cfg['max_epoch']):
             # reset random seed
             # ref: https://github.com/pytorch/pytorch/issues/5059
             np.random.seed(np.random.get_state()[1][0] + epoch)
             # train one epoch
             self.epoch += 1
+            print('Epoch: %d' % self.epoch)
 
             if self.model_type == 'centernet3d':
                 self.train_one_epoch()
@@ -160,7 +163,7 @@ class Trainer(object):
                 # update learning rate
             self.update_lr_scheduler(epoch)
             self.save_model()
-            progress_bar.update()
+            # progress_bar.update()
 
 
     def train_one_epoch(self):
@@ -172,7 +175,7 @@ class Trainer(object):
         data_time, batch_time = AverageMeter(), AverageMeter()
         avg_loss_stats = {l: AverageMeter() for l in loss_stats}
         num_iters = len(self.train_loader)
-        bar = Bar('{}/{}'.format("3D", self.cfg['model_save_path']), max=num_iters)
+        # bar = Bar('{}/{}'.format("3D", os.path.join(self.cfg['log_dir'], "checkpoints")), max=num_iters)
         end = time.time()
 
         for batch_idx, (inputs, targets, _) in enumerate(self.train_loader):
@@ -194,28 +197,44 @@ class Trainer(object):
 
             batch_time.update(time.time() - end)
             end = time.time()
-            Bar.suffix = '{phase}: [{0}][{1}/{2}]|Tot: {total:} |ETA: {eta:} '.format(
-                self.epoch, batch_idx, num_iters, phase="train",
-                total=bar.elapsed_td, eta=bar.eta_td)
+            # Bar.suffix = '{phase}: [{0}][{1}/{2}]|Tot: {total:} |ETA: {eta:} '.format(
+            #     self.epoch, batch_idx, num_iters, phase="train",
+            #     total=bar.elapsed_td, eta=bar.eta_td)
 
             for l in avg_loss_stats:
                 avg_loss_stats[l].update(
                     rgb_stats_batch[l], inputs['rgb'].shape[0])
-                Bar.suffix = Bar.suffix + '|{} {:.4f} '.format(l, avg_loss_stats[l].avg)
+                # Bar.suffix = Bar.suffix + '|{} {:.4f} '.format(l, avg_loss_stats[l].avg)
+            
+            if batch_idx % self.cfg['disp_frequency'] == 0:
+                log_str = 'BATCH[%04d/%04d]' % (batch_idx, num_iters)
+                for l in loss_stats:
+                    log_str += ' | %s: %.4f' % (l, avg_loss_stats[l].avg)
+                self.logger.info(log_str)
 
-            bar.next()
-        bar.finish()
+        #     bar.next()
+        # bar.finish()
 
     def train_one_epoch_distill(self):
         self.model.train()
         self.stats = {}  # reset stats dict
         self.stats['train'] = {}  # reset stats dict
 
-        loss_stats = ['rgb_loss', 'backbone_loss_l1', 'backbone_loss_affinity', 'head_loss']
+        loss_stats = ['rgb_loss']
+        if 'head_kd' in self.kd_type:
+            loss_stats.append('head_loss')
+        if 'l1_kd' in self.kd_type:
+            loss_stats.append('backbone_loss_l1')
+        if 'affinity_kd' in self.kd_type:
+            loss_stats.append('backbone_loss_affinity')
+        if 'cross_kd' in self.kd_type:
+            loss_stats.append('cross_head_loss')
+        if 'revcross_kd' in self.kd_type:
+            loss_stats.append('revcross_head_loss')
         data_time, batch_time = AverageMeter(), AverageMeter()
         avg_loss_stats = {l: AverageMeter() for l in loss_stats}
         num_iters = len(self.train_loader)
-        bar = Bar('{}/{}'.format("3D", self.cfg['model_save_path']), max=num_iters)
+        # bar = Bar('{}/{}'.format("3D", os.path.join(self.cfg['log_dir'], "checkpoints")), max=num_iters)
         end = time.time()
 
 
@@ -231,36 +250,55 @@ class Trainer(object):
             stats_batch = {}
             #stats_batch['rgb_loss'] = 0
             self.optimizer.zero_grad()
-            rgb_loss, backbone_loss_l1, backbone_loss_affinity, head_loss = self.model(inputs, targets)
+            rgb_loss, distill_loss = self.model(inputs, targets)
 
             stats_batch['rgb_loss'] = judge_nan(rgb_loss)
-
             rgb_loss = rgb_loss.mean()
-            backbone_loss_l1 = backbone_loss_l1.mean()
-            backbone_loss_affinity = backbone_loss_affinity.mean()
-            head_loss = head_loss.mean()
+            total_loss = rgb_loss
 
-            stats_batch['backbone_loss_l1'] = backbone_loss_l1.item()
-            stats_batch['backbone_loss_affinity'] = backbone_loss_affinity.item()
-            stats_batch['head_loss'] = head_loss.item()
-
-            total_loss = rgb_loss + 10*backbone_loss_l1 + backbone_loss_affinity + head_loss
+            if 'head_kd' in self.kd_type:
+                head_loss = distill_loss['head_loss'].mean()
+                stats_batch['head_loss'] = head_loss.item()
+                total_loss += head_loss
+            if 'l1_kd' in self.kd_type:
+                backbone_loss_l1 = distill_loss['backbone_loss_l1'].mean()
+                stats_batch['backbone_loss_l1'] = backbone_loss_l1.item()
+                total_loss += backbone_loss_l1 * 10
+            if 'affinity_kd' in self.kd_type:
+                backbone_loss_affinity = distill_loss['backbone_loss_affinity'].mean()
+                stats_batch['backbone_loss_affinity'] = backbone_loss_affinity.item()
+                total_loss += backbone_loss_affinity
+            if 'cross_kd' in self.kd_type:
+                cross_head_loss = distill_loss['cross_head_loss'].mean()
+                stats_batch['cross_head_loss'] = cross_head_loss.item()
+                total_loss += cross_head_loss
+            if 'revcross_kd' in self.kd_type:
+                revcross_head_loss = distill_loss['revcross_head_loss'].mean()
+                stats_batch['revcross_head_loss'] = revcross_head_loss.item()
+                total_loss += revcross_head_loss
+            
             total_loss.backward()
             self.optimizer.step()
 
             batch_time.update(time.time() - end)
             end = time.time()
-            Bar.suffix = '{phase}: [{0}][{1}/{2}]|Tot: {total:} |ETA: {eta:} '.format(
-                self.epoch, batch_idx, num_iters, phase="train",
-                total=bar.elapsed_td, eta=bar.eta_td)
+            # Bar.suffix = '{phase}: [{0}][{1}/{2}]|Tot: {total:} |ETA: {eta:} '.format(
+            #     self.epoch, batch_idx, num_iters, phase="train",
+            #     total=bar.elapsed_td, eta=bar.eta_td)
 
             for l in avg_loss_stats:
                 avg_loss_stats[l].update(
                     stats_batch[l], inputs['rgb'].shape[0])
-                Bar.suffix = Bar.suffix + '|{} {:.4f} '.format(l, avg_loss_stats[l].avg)
+            #     Bar.suffix = Bar.suffix + '|{} {:.4f} '.format(l, avg_loss_stats[l].avg)
 
-            bar.next()
-        bar.finish()
+            if batch_idx % self.cfg['disp_frequency'] == 0:
+                log_str = 'BATCH[%04d/%04d]' % (batch_idx, num_iters)
+                for l in loss_stats:
+                    log_str += ' | %s: %.4f' % (l, avg_loss_stats[l].avg)
+                self.logger.info(log_str)
+
+        #     bar.next()
+        # bar.finish()
 
 
 

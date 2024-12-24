@@ -6,7 +6,7 @@ def build_model(cfg, flag):
         return CenterNet3D(backbone=cfg['backbone'], neck=cfg['neck'], num_class=cfg['num_class'], flag=flag, model_type=cfg['type'])
 
     elif cfg['type'] == 'distill':
-        return MonoDistill(backbone=cfg['backbone'], neck=cfg['neck'], num_class=cfg['num_class'], flag=flag, model_type=cfg['type'])
+        return MonoDistill(backbone=cfg['backbone'], neck=cfg['neck'], num_class=cfg['num_class'], flag=flag, model_type=cfg['type'], kd_type=cfg['kd_type'])
 
     else:
         raise NotImplementedError("%s model is not supported" % cfg['type'])

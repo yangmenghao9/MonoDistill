@@ -20,7 +20,7 @@ import lib.datasets.kitti.kitti_eval_python.kitti_common as kitti
 class KITTI_Dataset(data.Dataset):
     def __init__(self, split, cfg):
         # basic configuration
-        self.root_dir = cfg.get('root_dir', '../../data/KITTI')
+        self.root_dir = cfg.get('root_dir', 'data/KITTI')
         self.split = split
         self.num_classes = 3
         self.max_objs = 50

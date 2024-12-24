@@ -17,7 +17,7 @@ from lib.losses.feature_distill_loss import compute_backbone_local_affinity_loss
 
 
 class MonoDistill(nn.Module):
-    def __init__(self, backbone='dla34', neck='DLAUp', num_class=3, downsample=4, flag='training', model_type='distill'):
+    def __init__(self, backbone='dla34', neck='DLAUp', num_class=3, downsample=4, flag='training', model_type='distill', kd_type=['cross_kd']):
         assert downsample in [4, 8, 16, 32]
         super().__init__()
 
@@ -49,6 +49,26 @@ class MonoDistill(nn.Module):
             self.__setattr__(adapt_name, fc)
 
         self.flag = flag
+        self.kd_type = kd_type
+
+    def align_scale(self, stu_feats, tea_feats):
+        algn_feats = []
+        for i in range(len(stu_feats)):
+            stu_feat = stu_feats[i]
+            tea_feat = tea_feats[i]
+            N, C, H, W = stu_feat.size()
+            # normalize student feature
+            stu_feat = stu_feat.permute(1, 0, 2, 3).reshape(C, -1)
+            stu_mean = stu_feat.mean(dim=-1, keepdim=True)
+            stu_std = stu_feat.std(dim=-1, keepdim=True)
+            stu_feat = (stu_feat - stu_mean) / (stu_std + 1e-6)
+            #
+            tea_feat = tea_feat.permute(1, 0, 2, 3).reshape(C, -1)
+            tea_mean = tea_feat.mean(dim=-1, keepdim=True)
+            tea_std = tea_feat.std(dim=-1, keepdim=True)
+            stu_feat = stu_feat * tea_std + tea_mean
+            algn_feats.append(stu_feat.reshape(C, N, H, W).permute(1, 0, 2, 3))
+        return algn_feats
 
     def forward(self, input, target=None):
         if self.flag == 'training' and target != None:
@@ -57,6 +77,14 @@ class MonoDistill(nn.Module):
 
             rgb_feat,  rgb_outputs = self.centernet_rgb(rgb)
             depth_feat,  depth_outputs = self.centernet_depth(depth)
+
+            if 'cross_kd' in self.kd_type:
+                align_rgb_feat = self.align_scale(rgb_feat, depth_feat)
+                cross_rgb_outputs = self.centernet_depth.forward_head(align_rgb_feat)
+            
+            if 'revcross_kd' in self.kd_type:
+                align_depth_feat = self.align_scale(depth_feat, rgb_feat)
+                cross_depth_outputs = self.centernet_rgb.forward_head(align_depth_feat)
 
             ### rgb feature fusion
             ### References: Distilling Knowledge via Knowledge Review, CVPR'21
@@ -79,12 +107,25 @@ class MonoDistill(nn.Module):
             ### rgb_loss
             rgb_loss, rgb_stats_batch = compute_centernet3d_loss(rgb_outputs, target)
 
+            distll_loss = {}
             ### distillation loss
-            head_loss, _ = compute_head_distill_loss(rgb_outputs, depth_outputs, target)
-            backbone_loss_l1 = compute_backbone_l1_loss(distill_feature, depth_feat[-3:], target)
-            backbone_loss_affinity = compute_backbone_resize_affinity_loss(distill_feature, depth_feat[-3:])
+            if 'head_kd' in self.kd_type:
+                head_loss, _ = compute_head_distill_loss(rgb_outputs, depth_outputs, target)
+                distll_loss['head_loss'] = head_loss
+            if 'l1_kd' in self.kd_type:
+                backbone_loss_l1 = compute_backbone_l1_loss(distill_feature, depth_feat[-3:], target)
+                distll_loss['backbone_loss_l1'] = backbone_loss_l1
+            if 'affinity_kd' in self.kd_type:
+                backbone_loss_affinity = compute_backbone_resize_affinity_loss(distill_feature, depth_feat[-3:])
+                distll_loss['backbone_loss_affinity'] = backbone_loss_affinity
+            if 'cross_kd' in self.kd_type:
+                cross_head_loss, _ = compute_head_distill_loss(cross_rgb_outputs, depth_outputs, target)
+                distll_loss['cross_head_loss'] = cross_head_loss
+            if 'revcross_kd' in self.kd_type:
+                revcross_head_loss, _ = compute_head_distill_loss(rgb_outputs, cross_depth_outputs, target)
+                distll_loss['revcross_head_loss'] = revcross_head_loss
 
-            return rgb_loss,  backbone_loss_l1, backbone_loss_affinity, head_loss
+            return rgb_loss, distll_loss
 
         elif self.flag == 'testing':
             rgb = input['rgb']

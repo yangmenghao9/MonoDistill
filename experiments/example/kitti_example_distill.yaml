@@ -19,6 +19,7 @@ model:
   backbone: 'dla34'
   neck: 'DLAUp'
   num_class: 3
+  kd_type: ['head_kd', 'l1_kd', 'affinity_kd', 'cross_kd'] # 'cross_kd', 'revcross_kd'
 
 optimizer:
   type: 'adam'
@@ -34,8 +35,9 @@ trainer:
   max_epoch: 160
   gpu_ids: 2,3
   save_frequency: 10 # checkpoint save interval (in epoch)
-  model_save_path: 'monodistill'
-  pretrain_model: {'rgb':'./rgb_pretrain.pth','depth':'./depth_pretrain.pth'}
+  disp_frequency: 20
+  log_dir: 'runs/monodistill'
+  pretrain_model: {'rgb':'ckpt/rgb_pretrain.pth','depth':'ckpt/depth_pretrain.pth'}
   #resume_model: {'rgb':'checkpoints_share_head/checkpoint_epoch_300_rgb.pth','depth':'checkpoints_no_distill_seperate/checkpoint_epoch_140_depth.pth'}
 
 
