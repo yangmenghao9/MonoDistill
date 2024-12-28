@@ -75,6 +75,7 @@ class Trainer(object):
         self.class_name = self.test_loader.dataset.class_name
         self.model_type = model_type
         self.root_path = root_path
+        self.dataset_type = cfg.get('type', 'KITTI')
 
         # loading pretrain/resume model
         if self.model_type == 'centernet3d':
@@ -141,6 +142,7 @@ class Trainer(object):
         self.model.eval()
 
         results = {}
+        print('==> Inference ...')
         for batch_idx, (inputs, _, info) in enumerate(self.test_loader):
             # load evaluation data and move data to GPU.
             for key in inputs.keys():
@@ -190,6 +192,7 @@ class Trainer(object):
 
 
     def evaluate(self):
+        print('==> Evaluation ...')
         _ = self.test_loader.dataset.eval(results_dir=os.path.join(self.cfg['log_dir'], 'rgb_outputs', 'data'), logger=self.logger)
 
 
@@ -205,8 +208,6 @@ class Trainer(object):
 
         start_epoch = self.epoch
 
-        # progress_bar = tqdm.tqdm(range(start_epoch, self.cfg['max_epoch']), dynamic_ncols=True, leave=True,
-        #                          desc='epochs')
         for epoch in range(start_epoch, self.cfg['max_epoch']):
             torch.set_grad_enabled(True)
             # reset random seed
@@ -221,10 +222,9 @@ class Trainer(object):
 
             elif self.model_type == 'distill':
                 self.train_one_epoch_distill()
-                # update learning rate
+            # update learning rate
             self.update_lr_scheduler(epoch)
             self.save_model()
-            # progress_bar.update()
 
 
     def train_one_epoch(self):
