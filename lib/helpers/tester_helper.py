@@ -68,7 +68,7 @@ class Tester(object):
             for key in inputs.keys():
                 inputs[key] = inputs[key].to(self.device)
             #inputs = inputs.to(self.device)
-            _, outputs = self.model(inputs)
+            _, _, outputs = self.model(inputs)
             dets = extract_dets_from_outputs(outputs=outputs, K=self.max_objs)
             dets = dets.detach().cpu().numpy()
 

@@ -19,10 +19,11 @@ model:
   backbone: 'dla34'
   neck: 'DLAUp'
   num_class: 3
+  kd_type: []
 
 optimizer:
   type: 'adam'
-  lr: 0.00125
+  lr: 0.001
   weight_decay: 0.00001
 
 lr_scheduler:
@@ -31,10 +32,11 @@ lr_scheduler:
   decay_list: [90, 120]
 
 trainer:
-  max_epoch: 140
+  max_epoch: 160
   gpu_ids: 0,1
   save_frequency: 10 # checkpoint save interval (in epoch)
-  model_save_path: 'rgb_baseline'
+  disp_frequency: 50
+  log_dir: 'runs/monodistill'
   #resume_model: ''
 
 
@@ -42,6 +44,6 @@ trainer:
 tester:
   type: *dataset_type
   mode: single   # 'single' or 'all'
-  checkpoint: './rgb_baseline/checkpoint_epoch_140.pth'  # for 'single' mode
+  checkpoint: 'ckpt/rgb_pretrain.pth'  # for 'single' mode
   checkpoints_dir: 'rgb_baseline'  # for 'all' model
   threshold: 0.2  # confidence filter

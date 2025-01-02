@@ -19,7 +19,7 @@ model:
   backbone: 'dla34'
   neck: 'DLAUp'
   num_class: 3
-  kd_type: ['head_kd',  'affinity_kd', 'bkl_kd'] # 'cross_kd', 'bkl_kd'
+  kd_type: ['head_kd', 'l1_kd', 'affinity_kd'] # 'cross_kd', 'bkl_kd'
 
 optimizer:
   type: 'adam'
@@ -35,15 +35,16 @@ trainer:
   max_epoch: 160
   gpu_ids: 2,3
   save_frequency: 10 # checkpoint save interval (in epoch)
-  disp_frequency: 20
-  log_dir: 'runs/monodistill'
+  disp_frequency: 50
+  log_dir: 'runs/monodistill_seed444_new'
   pretrain_model: {'rgb':'ckpt/rgb_pretrain.pth','depth':'ckpt/depth_pretrain.pth'}
   #resume_model: {'rgb':'checkpoints_share_head/checkpoint_epoch_300_rgb.pth','depth':'checkpoints_no_distill_seperate/checkpoint_epoch_140_depth.pth'}
 
 
 tester:
   type: *dataset_type
-  mode: single   # 'single' or 'all'
-  checkpoint: '/autodl-fs/data/qyf/projects/Mono3D/MonoDistill/ckpt/distill.pth'  # for 'single' mode
-  checkpoints_dir: 'runs/202412311515_monodistill_autodl-con_head_kd-l1_kd-affinity_kd/checkpoints/'
+  mode: all   # 'single' or 'all'
+  checkpoint: '/autodl-fs/data/qyf/projects/Mono3D/MonoDistill/runs/202412260007_monodistill_autodl-con_head_kd-l1_kd-affinity_kd-cross_kd/checkpoints/checkpoint_epoch_160.pth'  # for 'single' mode
+  checkpoints_dir: 'runs/202412311515_monodistill_autodl-con_head_kd-l1_kd-affinity_kd/checkpoints'
+  # checkpoints_dir: 'runs/202412251328_monodistill_autodl-con_head_kd-l1_kd-affinity_kd/checkpoints/'  # for 'all' model
   threshold: 0.2  # confidence filter

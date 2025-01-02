@@ -59,19 +59,18 @@ class CenterNet3D(nn.Module):
         for head in self.heads:
             ret[head] = self.__getattr__(head)(feat)
 
-        return feat_backbone, ret
+        return feat_backbone, feat, ret
     
 
     def forward_backbone(self, input):
         if self.model_type == 'centernet3d':
             input = input['rgb']
         feat_backbone = self.backbone(input)
-        return feat_backbone
+        feat = self.neck(feat_backbone[self.first_level:])  # first_level = 2
+        return feat
     
 
-    def forward_head(self, feat_backbone):
-        feat = self.neck(feat_backbone[self.first_level:])  # first_level = 2
-
+    def forward_head(self, feat):
         ret = {}
         for head in self.heads:
             ret[head] = self.__getattr__(head)(feat)

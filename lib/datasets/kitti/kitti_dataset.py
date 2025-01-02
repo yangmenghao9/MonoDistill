@@ -47,7 +47,7 @@ class KITTI_Dataset(data.Dataset):
         self.idx_list = [x.strip() for x in open(self.split_file).readlines()]
 
         # path configuration
-        self.data_dir = os.path.join(self.root_dir, 'object', 'testing' if split == 'test' else 'training')
+        self.data_dir = os.path.join(self.root_dir, 'testing' if split == 'test' else 'training')
         self.image_dir = os.path.join(self.data_dir, 'image_2')
         self.depth_dir = os.path.join(self.data_dir, 'depth_2')
         self.calib_dir = os.path.join(self.data_dir, 'calib')
@@ -119,6 +119,7 @@ class KITTI_Dataset(data.Dataset):
         for category in self.writelist:
             results_str, results_dict = get_official_eval_result(gt_annos, dt_annos, test_id[category])
             logger.info(results_str)
+        return results_dict
 
 
     def __len__(self):

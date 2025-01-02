@@ -12,7 +12,7 @@ from lib.losses.centernet_loss import compute_centernet3d_loss
 from lib.losses.head_distill_loss import compute_head_distill_loss
 from lib.losses.feature_distill_loss import compute_backbone_l1_loss
 from lib.losses.feature_distill_loss import compute_backbone_resize_affinity_loss
-from lib.losses.feature_distill_loss import compute_backbone_local_affinity_loss
+from lib.losses.feature_distill_loss import compute_backbone_bkl_loss
 
 
 
@@ -74,16 +74,14 @@ class MonoDistill(nn.Module):
         if self.flag == 'training' and target != None:
             rgb = input['rgb']
             depth = input['depth']
-
-            rgb_feat,  rgb_outputs = self.centernet_rgb(rgb)
-            depth_feat,  depth_outputs = self.centernet_depth(depth)
-
+            rgb_feat, rgb_neck, rgb_outputs = self.centernet_rgb(rgb)
+            depth_feat, depth_neck, depth_outputs = self.centernet_depth(depth)
             if 'cross_kd' in self.kd_type:
-                align_rgb_feat = self.align_scale(rgb_feat, depth_feat)
+                align_rgb_feat = self.align_scale([rgb_neck], [depth_neck])[0]
                 cross_rgb_outputs = self.centernet_depth.forward_head(align_rgb_feat)
             
-            if 'revcross_kd' in self.kd_type:
-                align_depth_feat = self.align_scale(depth_feat, rgb_feat)
+            if 'bkl_kd' in self.kd_type:
+                align_depth_feat = self.align_scale([depth_neck], [rgb_neck])[0]
                 cross_depth_outputs = self.centernet_rgb.forward_head(align_depth_feat)
 
             ### rgb feature fusion
@@ -121,17 +119,17 @@ class MonoDistill(nn.Module):
             if 'cross_kd' in self.kd_type:
                 cross_head_loss, _ = compute_head_distill_loss(cross_rgb_outputs, depth_outputs, target)
                 distll_loss['cross_head_loss'] = cross_head_loss
-            if 'revcross_kd' in self.kd_type:
-                revcross_head_loss, _ = compute_head_distill_loss(rgb_outputs, cross_depth_outputs, target)
-                distll_loss['revcross_head_loss'] = revcross_head_loss
+            if 'bkl_kd' in self.kd_type:
+                bkl_kd_loss= compute_backbone_bkl_loss(distill_feature, depth_feat[-3:])
+                distll_loss['bkl_kd'] = bkl_kd_loss
 
-            return rgb_loss, distll_loss
+            return rgb_loss, distll_loss, rgb_stats_batch
 
-        elif self.flag == 'testing':
+        else:
             rgb = input['rgb']
-            rgb_feat, rgb_outputs = self.centernet_rgb(rgb)
+            rgb_feat, rgb_neck, rgb_outputs = self.centernet_rgb(rgb)
 
-            return rgb_feat, rgb_outputs
+            return rgb_feat, rgb_neck, rgb_outputs
 
     def fill_fc_weights(self, layers):
         for m in layers.modules():
