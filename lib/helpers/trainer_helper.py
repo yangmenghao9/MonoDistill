@@ -25,6 +25,8 @@ import math
 # from progress.bar import Bar
 import time
 
+from tools import eval
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -70,9 +72,12 @@ class Trainer(object):
         self.epoch = 0
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+        self.max_objs = test_loader.dataset.max_objs    # max objects per images, defined in dataset
+        self.label_dir = "data/KITTI/training/label_2/"
         self.class_name = self.test_loader.dataset.class_name
         self.model_type = model_type
         self.root_path = root_path
+        self.dataset_type = cfg.get('type', 'KITTI')
 
         # loading pretrain/resume model
         if self.model_type == 'centernet3d':
@@ -134,22 +139,80 @@ class Trainer(object):
         else:
             self.lr_scheduler.step()
 
+    def inference(self):
+        torch.set_grad_enabled(False)
+        self.model.eval()
+
+        results = {}
+        print('==> Inference ...')
+        for batch_idx, (inputs, _, info) in enumerate(self.test_loader):
+            # load evaluation data and move data to GPU.
+            for key in inputs.keys():
+                inputs[key] = inputs[key].to(self.device)
+            #inputs = inputs.to(self.device)
+            _, outputs = self.model(inputs)
+            dets = extract_dets_from_outputs(outputs=outputs, K=self.max_objs)
+            dets = dets.detach().cpu().numpy()
+
+            # get corresponding calibs & transform tensor to numpy
+            calibs = [self.test_loader.dataset.get_calib(index)  for index in info['img_id']]
+            info = {key: val.detach().cpu().numpy() for key, val in info.items()}
+            cls_mean_size = self.test_loader.dataset.cls_mean_size
+            dets = decode_detections(dets=dets,
+                                     info=info,
+                                     calibs=calibs,
+                                     cls_mean_size=cls_mean_size,
+                                     threshold=self.cfg.get('threshold', 0.2))
+            results.update(dets)
+
+        # save the result for evaluation.
+        self.logger.info('==> Saving ...')
+        self.save_results(results, output_dir=os.path.join(self.cfg['log_dir'], 'rgb_outputs'))
+
+
+    def save_results(self, results, output_dir='./rgb_outputs'):
+        output_dir = os.path.join(output_dir, 'data')
+        os.makedirs(output_dir, exist_ok=True)
+
+        for img_id in results.keys():
+            if self.dataset_type == 'KITTI':
+                output_path = os.path.join(output_dir, '{:06d}.txt'.format(img_id))
+            else:
+                os.makedirs(os.path.join(output_dir, self.test_loader.dataset.get_sensor_modality(img_id)), exist_ok=True)
+                output_path = os.path.join(output_dir,
+                                           self.test_loader.dataset.get_sensor_modality(img_id),
+                                           self.test_loader.dataset.get_sample_token(img_id) + '.txt')
+
+            f = open(output_path, 'w')
+            for i in range(len(results[img_id])):
+                class_name = self.class_name[int(results[img_id][i][0])]
+                f.write('{} 0.0 0'.format(class_name))
+                for j in range(1, len(results[img_id][i])):
+                    f.write(' {:.2f}'.format(results[img_id][i][j]))
+                f.write('\n')
+            f.close()
+
+
+    def evaluate(self):
+        print('==> Evaluation ...')
+        _ = self.test_loader.dataset.eval(results_dir=os.path.join(self.cfg['log_dir'], 'rgb_outputs', 'data'), logger=self.logger)
+
+
     def save_model(self):
         if (self.epoch % self.cfg['save_frequency']) == 0:
             os.makedirs(os.path.join(self.cfg['log_dir'], "checkpoints"), exist_ok=True)
             ckpt_name = os.path.join(os.path.join(self.cfg['log_dir'], "checkpoints"), 'checkpoint_epoch_%d' % self.epoch)
             save_checkpoint(get_checkpoint_state(self.model, self.optimizer, self.epoch), ckpt_name)
-            #self.inference()
-            #self.evaluate()
+            self.inference()
+            self.evaluate()
 
     def train(self):
         best_ap = {"epoch":0, "ap":0.0}
         # ap_all = self.eval_one_epoch()
         start_epoch = self.epoch
 
-        # progress_bar = tqdm.tqdm(range(start_epoch, self.cfg['max_epoch']), dynamic_ncols=True, leave=True,
-        #                          desc='epochs')
         for epoch in range(start_epoch, self.cfg['max_epoch']):
+            torch.set_grad_enabled(True)
             # reset random seed
             # ref: https://github.com/pytorch/pytorch/issues/5059
             np.random.seed(np.random.get_state()[1][0] + epoch)
@@ -162,7 +225,7 @@ class Trainer(object):
 
             elif self.model_type == 'distill':
                 self.train_one_epoch_distill()
-                # update learning rate
+            # update learning rate
             self.update_lr_scheduler(epoch)
             self.save_model()
 
@@ -237,6 +300,8 @@ class Trainer(object):
             loss_stats.append('backbone_loss_l1')
         if 'affinity_kd' in self.kd_type:
             loss_stats.append('backbone_loss_affinity')
+        if 'cwd_kd' in self.kd_type:
+            loss_stats.append('cwd_loss')
         if 'cross_kd' in self.kd_type:
             loss_stats.append('cross_head_loss')
         if 'bkl_kd' in self.kd_type:
@@ -278,6 +343,10 @@ class Trainer(object):
                 backbone_loss_affinity = distill_loss['backbone_loss_affinity'].mean()
                 total_loss += backbone_loss_affinity
                 disp_dict['backbone_loss_affinity'] += backbone_loss_affinity.item()
+            if 'cwd_kd' in self.kd_type:
+                cwd_loss = distill_loss['cwd_loss'].mean()
+                total_loss += cwd_loss
+                disp_dict['cwd_loss'] = cwd_loss.item()
             if 'cross_kd' in self.kd_type:
                 cross_head_loss = distill_loss['cross_head_loss'].mean()
                 total_loss += cross_head_loss

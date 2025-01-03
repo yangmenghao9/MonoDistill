@@ -36,13 +36,13 @@ def main():
 
     cfg['trainer']['log_dir'] = os.path.join(os.path.dirname(cfg['trainer']['log_dir']), \
                                             datetime.datetime.now().strftime('%Y%m%d%H%M_') + os.path.basename(cfg['trainer']['log_dir']) + '_' + socket.gethostname()[:10] + '_' + '-'.join(cfg['model']['kd_type']))
-    os.makedirs(cfg['trainer']['log_dir'], exist_ok=True)
 
-    log_path = cfg['trainer']['log_dir']
-    if os.path.exists(log_path):
-        pass
+    if args.evaluate_only:
+        log_path = os.path.join(*cfg['tester']['checkpoint'].split('/')[:-2])
     else:
-        os.mkdir(log_path)
+        log_path = cfg['trainer']['log_dir']
+    os.makedirs(log_path, exist_ok=True)
+
     log_file = '/train.log.%s' % datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     logger = create_logger(log_path, log_file)
 
@@ -87,14 +87,6 @@ def main():
                       root_path=ROOT_DIR,
                       kd_type=cfg['model']['kd_type'])
     trainer.train()
-
-    logger.info('###################  Evaluation  ##################' )
-    test_model_list = build_model(cfg['model'],'testing')
-    tester = Tester(cfg=cfg['tester'],
-                    model=test_model_list,
-                    dataloader=test_loader,
-                    logger=logger)
-    tester.test()
 
 
 if __name__ == '__main__':

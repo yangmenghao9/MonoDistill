@@ -12,7 +12,7 @@ from lib.losses.centernet_loss import compute_centernet3d_loss
 from lib.losses.head_distill_loss import compute_head_distill_loss
 from lib.losses.feature_distill_loss import compute_backbone_l1_loss
 from lib.losses.feature_distill_loss import compute_backbone_resize_affinity_loss
-from lib.losses.feature_distill_loss import compute_backbone_bkl_loss
+from lib.losses.feature_distill_loss import compute_backbone_cwd_loss, compute_backbone_bkl_loss
 
 
 
@@ -116,6 +116,12 @@ class MonoDistill(nn.Module):
             if 'affinity_kd' in self.kd_type:
                 backbone_loss_affinity = compute_backbone_resize_affinity_loss(distill_feature, depth_feat[-3:])
                 distll_loss['backbone_loss_affinity'] = backbone_loss_affinity
+            if 'cwd_kd' in self.kd_type:
+                cwd_loss = compute_backbone_cwd_loss(distill_feature, depth_feat[-3:])
+                distll_loss['cwd_loss'] = cwd_loss
+            if 'bkl_kd' in self.kd_type:
+                bkl_loss = compute_backbone_bkl_loss(distill_feature, depth_feat[-3:])
+                distll_loss['bkl_loss'] = bkl_loss
             if 'cross_kd' in self.kd_type:
                 cross_head_loss, _ = compute_head_distill_loss(cross_rgb_outputs, depth_outputs, target)
                 distll_loss['cross_head_loss'] = cross_head_loss

@@ -128,7 +128,19 @@ def calculate_box_mask(features_preds, target, downsample_ratio):
             gt_mask[i, left_top_y:right_bottom_y, left_top_x:right_bottom_x] = 1
     return gt_mask
 
-
+def compute_backbone_cwd_loss(features_preds, features_targets, tau=4.0):
+    feature_ditill_loss = 0.0
+    if isinstance(features_preds, list):
+        for i in range(len(features_preds)):
+            feature_target = features_targets[i].detach()
+            feature_pred = features_preds[i]
+            B, C, H, W = feature_pred.shape
+            # feature_pred = norm(feature_pred)
+            # feature_target = norm(feature_target)
+            softmax_target = F.softmax(feature_target.reshape(B, C, -1) / tau, dim=1)
+            logsoftmax_pred = F.log_softmax(feature_pred.reshape(B, C, -1) / tau, dim=1)
+            feature_ditill_loss += F.kl_div(logsoftmax_pred, softmax_target, size_average=False) * (tau ** 2) / (B * C)
+    return feature_ditill_loss
 
 def compute_backbone_bkl_loss(features_preds, features_targets, tau_f=4.0, tau_r=4.0, w_f=1.0, w_r=1.0):
     feature_ditill_loss = 0.0

@@ -19,7 +19,7 @@ model:
   backbone: 'dla34'
   neck: 'DLAUp'
   num_class: 3
-  kd_type: ['head_kd',  'affinity_kd', 'bkl_kd'] # 'cross_kd', 'bkl_kd'
+  kd_type: ['head_kd', 'l1_kd', 'affinity_kd'] #, 'cwd_kd', 'bkl_kd'] # 'cross_kd', 'revcross_kd'
 
 optimizer:
   type: 'adam'
@@ -34,6 +34,8 @@ lr_scheduler:
 trainer:
   max_epoch: 160
   gpu_ids: 2,3
+  eval_start: 90
+  eval_frequency: 10 # evaluation interval (in epoch)
   save_frequency: 10 # checkpoint save interval (in epoch)
   disp_frequency: 20
   log_dir: 'runs/monodistill'
@@ -44,6 +46,6 @@ trainer:
 tester:
   type: *dataset_type
   mode: single   # 'single' or 'all'
-  checkpoint: '/autodl-fs/data/qyf/projects/Mono3D/MonoDistill/ckpt/distill.pth'  # for 'single' mode
-  checkpoints_dir: 'runs/202412311515_monodistill_autodl-con_head_kd-l1_kd-affinity_kd/checkpoints/'
+  checkpoint: 'runs/202412252359_monodistill_ubuntu-cs1_head_kd-l1_kd-affinity_kd-cwd_kd-cross_kd/checkpoints/checkpoint_epoch_160.pth'  # for 'single' mode
+  checkpoints_dir: 'monodistill'  # for 'all' model
   threshold: 0.2  # confidence filter
