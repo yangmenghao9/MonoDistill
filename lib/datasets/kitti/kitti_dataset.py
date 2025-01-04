@@ -47,7 +47,7 @@ class KITTI_Dataset(data.Dataset):
         self.idx_list = [x.strip() for x in open(self.split_file).readlines()]
 
         # path configuration
-        self.data_dir = os.path.join(self.root_dir, 'object', 'testing' if split == 'test' else 'training')
+        self.data_dir = os.path.join(self.root_dir, 'testing' if split == 'test' else 'training')
         self.image_dir = os.path.join(self.data_dir, 'image_2')
         self.depth_dir = os.path.join(self.data_dir, 'depth_2')
         self.calib_dir = os.path.join(self.data_dir, 'calib')

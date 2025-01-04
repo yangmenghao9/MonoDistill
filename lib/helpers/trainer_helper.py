@@ -21,7 +21,7 @@ import PIL
 import matplotlib.pyplot as plt
 import math
 
-from progress.bar import Bar
+# from progress.bar import Bar
 import time
 
 
